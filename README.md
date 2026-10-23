@@ -1,5 +1,6 @@
 # PIDSMaker baselines: THEIA_E3 / TRACE_E3 / THEIA_E5
-Link code để chạy có setup và kèm dataset : https://www.kaggle.com/datasets/nguynnhtmlp11a13/pidsmaker.
+
+Link code để chạy, có setup và kèm dataset: https://www.kaggle.com/datasets/nguynnhtmlp11a13/pidsmaker
 
 Chạy 4 thí nghiệm baseline (Velox, Orthrus) trên PIDSMaker, mỗi lần chạy đo CPU / RAM / VRAM, lưu log và metric (precision, recall, F-score...), tự dọn đĩa và gửi thông báo.
 
@@ -10,7 +11,7 @@ Chạy 4 thí nghiệm baseline (Velox, Orthrus) trên PIDSMaker, mỗi lần ch
 | `B_velox` | Velox | cross-host | `THEIA_E3` + `TRACE_E3` | `THEIA_E5` | `theia_e3`, `trace_e3`, `theia_e5` |
 | `B_orthrus` | Orthrus | cross-host | `THEIA_E3` + `TRACE_E3` | `THEIA_E5` | như trên |
 
-Bài B dùng tham số tuned của `THEIA_E3` (host dùng để train). Cờ cross-host nằm trong biến `CROSS` của `run_all.sh`:
+Bài B train trên `THEIA_E3` + `TRACE_E3`, test trên `THEIA_E5`. Siêu tham số (dropout, learning rate, hidden dim, số epoch...) dùng bộ đã tune sẵn cho `THEIA_E3` trong docs của PIDSMaker (`docs/docs/tuned_systems.md`), không dùng bộ tune của `THEIA_E5` vì bộ đó được chỉnh ngay trên host test, dùng sẽ rò rỉ thông tin test. Cờ cross-host nằm trong biến `CROSS` của `run_all.sh`:
 `multi_dataset=THEIA_E3,TRACE_E3`, `multi_dataset_training=True` (featurization và batching), `multi_dataset_primary_test_only=True`. Dataset gõ ở dòng lệnh (`THEIA_E5`) luôn là dataset test, train/val của nó không được dùng để học.
 
 ## 1. Yêu cầu
@@ -62,7 +63,7 @@ Dump gốc lấy từ thư mục Google Drive của PIDSMaker (xem docs của PI
 ```bash
 pip install kaggle
 export KAGGLE_USERNAME="nguynnhtmlp11a13"
-export KAGGLE_KEY="KGAT_9a2c1042e6c49519f5e8ed1ea10d6dfe"      # kaggle.com/settings -> API
+export KAGGLE_KEY="<key trong kaggle.json>"      # kaggle.com/settings -> API
 kaggle datasets download -d nguynnhtmlp11a13/pidsmaker -p ~/kdata --unzip
 ```
 
