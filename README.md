@@ -2642,7 +2642,7 @@ index dcb3175..60fb597 100644
 +++ b/pidsmaker/config/config.py
 @@ -1,6 +1,46 @@
  import os
-
+ 
  DATASET_DEFAULT_CONFIG = {
 +    "THEIA_E3_CUT": {
 +        "raw_dir": "",
@@ -2721,8 +2721,8 @@ index 190da2e..e60046e 100644
 +++ b/pidsmaker/config/pipeline.py
 @@ -32,6 +32,9 @@ ROOT_GROUND_TRUTH_DIR = os.path.join(ROOT_PROJECT_PATH, "Ground_Truth/")
  # ================================================================================
-
-
+ 
+ 
 +_WARNED_ONCE = set()  # warnings printed once per process (validation runs once per dataset/task)
 +
 +
@@ -2732,7 +2732,7 @@ index 190da2e..e60046e 100644
 @@ -677,6 +680,31 @@ def check_edge_cases(cfg):
                  "Using multi-dataset mode requires setting `preprocessing.construction.multi_dataset`"
              )
-
+ 
 +    if getattr(cfg.featurization, "multi_dataset_primary_test_only", False):
 +        if not (
 +            use_multi_dataset
@@ -2777,9 +2777,9 @@ index 23803f5..418166e 100644
  from pidsmaker.detection.evaluation_methods.plot import plot_scores_distribution
  from pidsmaker.utils.utils import (
 @@ -334,6 +338,16 @@ def main(
-
+ 
      results, thr, edge_records = get_preds_fn(cfg=cfg, val_tw_path=val_tw_path, test_tw_path=test_tw_path)
-
+ 
 +    node_to_path = get_node_to_path_and_type(cfg)
 +
 +    # Optional: evaluate on subject (process) nodes only. Filters the scored nodes and the
@@ -2796,15 +2796,15 @@ index 23803f5..418166e 100644
 @@ -342,8 +356,6 @@ def main(
      # torch.save(results, results_epoch_save_dir)
      # log(f"Resutls saved to {results_save_dir}")
-
+ 
 -    node_to_path = get_node_to_path_and_type(cfg)
 -
      out_dir = cfg.evaluation._precision_recall_dir
      os.makedirs(out_dir, exist_ok=True)
-
+ 
 @@ -365,6 +377,10 @@ def main(
      distrib_img_file = os.path.join(out_dir, f"distrib_{model_epoch_dir}.png")
-
+ 
      attack_to_GPs = get_GP_of_each_attack(cfg)
 +    if only_subject:
 +        attack_to_GPs = filter_attack_gps_by_type(attack_to_GPs, node_to_path, "subject")
@@ -2819,22 +2819,22 @@ index 9593e84..981035f 100644
 +++ b/pidsmaker/detection/training_methods/inference_loop.py
 @@ -279,6 +279,8 @@ def main(cfg, model, val_data, test_data, epoch, split, logging=True, train_data
      model.to_device(device)
-
+ 
      model_epoch_file = f"model_epoch_{epoch}"
 +    # Cross-host mode: node ids of different datasets overlap, so TGN memory must be cleared per dataset
 +    reset_between_datasets = bool(getattr(cfg.featurization, "multi_dataset_primary_test_only", False))
      if use_cuda:
          torch.cuda.reset_peak_memory_stats(device=device)
-
+ 
 @@ -295,6 +297,8 @@ def main(cfg, model, val_data, test_data, epoch, split, logging=True, train_data
-
+ 
          all_losses = []
          for graphs in dataset:
 +            if reset_between_datasets and hasattr(model, "reset_state"):
 +                model.reset_state()
              for g in log_tqdm(graphs, desc=desc, logging=logging):
                  g.to(device=device)
-
+ 
 diff --git a/pidsmaker/detection/training_methods/training_loop.py b/pidsmaker/detection/training_methods/training_loop.py
 index a00401c..318b2ed 100644
 --- a/pidsmaker/detection/training_methods/training_loop.py
@@ -2845,7 +2845,7 @@ index a00401c..318b2ed 100644
      grad_acc = cfg.training.grad_accumulation
 +    # Cross-host mode: node ids of different datasets overlap, so TGN memory must not carry over
 +    reset_between_datasets = bool(getattr(cfg.featurization, "multi_dataset_primary_test_only", False))
-
+ 
      es_tracker = early_stop_tracker_factory(cfg)
      # Stable optim: warmup cosine scheduler (computed over total training steps)
 @@ -130,6 +132,8 @@ def main(cfg):
@@ -2873,8 +2873,8 @@ index 1276bf4..23595a7 100644
 +    log_tqdm,
 +)
  from pidsmaker.hetero import compute_hetero_features
-
-
+ 
+ 
 @@ -176,7 +181,10 @@ def load_data_set(cfg, split: str, multi_dataset=False) -> list[CollatableTempor
      Returns a list of time window graphs for a given `split` (train/val/test set).
      """
@@ -2895,7 +2895,7 @@ index 1276bf4..23595a7 100644
 +                    getattr(cfg.featurization, "multi_dataset_primary_test_only", False)
 +                ),
              )
-
+ 
          else:
 @@ -636,6 +647,7 @@ def compute_tgn_graphs(
      tgn_loader_cfg,
@@ -2908,7 +2908,7 @@ index 1276bf4..23595a7 100644
 @@ -652,8 +664,19 @@ def compute_tgn_graphs(
      node_type_cache = torch.zeros((max_node, node_type_dim), device=device)
      assoc = torch.empty(max_node, dtype=torch.long, device=device)
-
+ 
 +    # Neighbor-loader edge ids restart at 0 after `reset_state()`, but `full_data` is the concatenation
 +    # of ALL datasets, so ids must be shifted by the number of edges inserted before the reset.
 +    edge_offset = 0
@@ -2933,7 +2933,7 @@ index 1276bf4..23595a7 100644
 -                    real_dst = full_data.dst[e_id.cpu()].to(device)
 +                    real_src = full_data.src[e_id.cpu() + edge_offset].to(device)
 +                    real_dst = full_data.dst[e_id.cpu() + edge_offset].to(device)
-
+ 
                      loader_src = n_id[edge_index[0]]
                      loader_dst = n_id[edge_index[1]]
 @@ -722,10 +745,10 @@ def compute_tgn_graphs(
@@ -2947,16 +2947,16 @@ index 1276bf4..23595a7 100644
                  batch.node_type_tgn = node_type_cache[n_id]
 -                batch.edge_type_tgn = full_data.edge_type[e_id.cpu()]
 +                batch.edge_type_tgn = full_data.edge_type[e_id.cpu() + edge_offset]
-
+ 
                  batch = batch.to("cpu")
-
+ 
 diff --git a/pidsmaker/utils/dataset_utils.py b/pidsmaker/utils/dataset_utils.py
 index be7e202..9784b21 100644
 --- a/pidsmaker/utils/dataset_utils.py
 +++ b/pidsmaker/utils/dataset_utils.py
 @@ -467,6 +467,7 @@ ntype2id = {
  }
-
+ 
  DARPA_TC_DATASETS = {
 +    "THEIA_E3_CUT",
      "CADETS_E3",
@@ -2968,21 +2968,21 @@ index 5642fcb..c345b63 100644
 +++ b/pidsmaker/utils/utils.py
 @@ -501,7 +501,7 @@ def get_indexid2msg(cfg, gather_multi_dataset=False):
          return indexid2msg
-
+ 
      if gather_multi_dataset:
 -        multi_datasets = get_multi_datasets(cfg)
 +        multi_datasets = get_training_datasets(cfg)
          log(f"Multi-dataset order: {multi_datasets}")
-
+ 
          all_indexid2msg = {}
 @@ -527,7 +527,7 @@ def get_split2nodes(cfg, gather_multi_dataset=False):
          split2nodes = torch.load(path)
          return split2nodes
-
+ 
 -    multi_datasets = get_multi_datasets(cfg)
 +    multi_datasets = get_training_datasets(cfg)
      use_multi_dataset = "none" not in cfg.construction.multi_dataset
-
+ 
      if gather_multi_dataset and use_multi_dataset:
 @@ -701,3 +701,15 @@ def get_multi_datasets(cfg):
          map(lambda x: x.strip(), multi_dataset.split("," if "," in multi_dataset else "-"))
