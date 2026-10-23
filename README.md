@@ -1,5 +1,6 @@
 # PIDSMaker baselines: THEIA_E3 / TRACE_E3 / THEIA_E5
-Link code để chạy có setup và kèm dataset : https://www.kaggle.com/datasets/nguynnhtmlp11a13/pidsmaker
+Link code để chạy có setup và kèm dataset : https://www.kaggle.com/datasets/nguynnhtmlp11a13/pidsmaker.
+
 Chạy 4 thí nghiệm baseline (Velox, Orthrus) trên PIDSMaker, mỗi lần chạy đo CPU / RAM / VRAM, lưu log và metric (precision, recall, F-score...), tự dọn đĩa và gửi thông báo.
 
 | Tên | Model | Kiểu | Train | Test | DB cần |
